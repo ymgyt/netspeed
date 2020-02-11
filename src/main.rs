@@ -1,5 +1,3 @@
-#![feature(backtrace)]
-
 use log::error;
 use netspeed::{cli, logger, Client, Server};
 use std::env;
@@ -20,16 +18,7 @@ fn run() -> Result<(), anyhow::Error> {
 
 fn main() {
     if let Err(err) = run() {
-        for cause in err.chain() {
-            if let Some(ioerr) = cause.downcast_ref::<std::io::Error>() {
-                error!("IOError: [{:?}] {}", ioerr.kind(), ioerr);
-            } else {
-                error!("{}", cause);
-            }
-            if let Some(bt) = cause.backtrace() {
-                    error!("{}", bt);
-            }
-        }
+            error!("{:?}", err);
         std::process::exit(1)
     }
 }
