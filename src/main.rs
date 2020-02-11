@@ -1,8 +1,10 @@
+#![feature(backtrace)]
+
 use log::error;
 use netspeed::{cli, logger, Client, Server};
 use std::env;
 
-fn run() -> Result<(), failure::Error> {
+fn run() -> Result<(), anyhow::Error> {
     let args = cli::ArgParser::parse(env::args_os());
 
     logger::init(args.occurrences_of("verbose"));
@@ -18,16 +20,14 @@ fn run() -> Result<(), failure::Error> {
 
 fn main() {
     if let Err(err) = run() {
-        for cause in err.iter_chain() {
+        for cause in err.chain() {
             if let Some(ioerr) = cause.downcast_ref::<std::io::Error>() {
                 error!("IOError: [{:?}] {}", ioerr.kind(), ioerr);
             } else {
                 error!("{}", cause);
             }
             if let Some(bt) = cause.backtrace() {
-                if !bt.is_empty() {
                     error!("{}", bt);
-                }
             }
         }
         std::process::exit(1)

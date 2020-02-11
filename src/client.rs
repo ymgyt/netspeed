@@ -1,11 +1,11 @@
-use crate::{command::Command, Result};
-use failure::ResultExt;
-use log::{debug, info};
 use std::{
     fmt,
     net::{TcpStream, ToSocketAddrs},
     time::Duration,
 };
+use log::{debug, info};
+use anyhow::{Result, Context};
+use crate::command::Command;
 
 pub struct Client {
     conn: TcpStream,

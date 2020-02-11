@@ -1,9 +1,9 @@
-use crate::Result;
-use byteorder::{ReadBytesExt, WriteBytesExt};
 use std::{
     convert::{From, TryFrom},
     net::TcpStream,
 };
+use byteorder::{ReadBytesExt, WriteBytesExt};
+use anyhow::{Result, anyhow};
 
 #[repr(u8)]
 #[derive(Debug, Eq, PartialEq)]
@@ -20,11 +20,11 @@ impl From<Command> for u8 {
 }
 
 impl TryFrom<u8> for Command {
-    type Error = failure::Error;
+    type Error = anyhow::Error;
     fn try_from(n: u8) -> Result<Self> {
         match n {
             1 => Ok(Command::Ping),
-            _ => Err(failure::format_err!("Invalid number {} for command", n)),
+            _ => Err(anyhow!("Invalid number {} for command", n)),
         }
     }
 }
@@ -33,7 +33,7 @@ impl Command {
     pub fn write_ping(stream: &mut TcpStream) -> Result<()> {
         stream
             .write_u8(Command::Ping.into())
-            .map_err(failure::Error::from)
+            .map_err(anyhow::Error::from)
     }
 
     pub fn read_ping(stream: &mut TcpStream) -> Result<()> {

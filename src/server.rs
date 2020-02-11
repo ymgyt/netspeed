@@ -1,13 +1,13 @@
-use crate::{command::Command, Result};
-use byteorder::{ReadBytesExt, WriteBytesExt};
-#[allow(unused_imports)]
-use log::{debug, error, info};
 use std::{
     convert::TryFrom,
     fmt,
     net::{SocketAddr, TcpListener, TcpStream, ToSocketAddrs},
     thread,
 };
+use log::{debug, error, info};
+use byteorder::{ReadBytesExt, WriteBytesExt};
+use anyhow::{Context, Result};
+use crate::command::Command;
 
 pub struct Server {
     listener: TcpListener,
@@ -17,7 +17,7 @@ impl Server {
     pub fn new(addr: impl ToSocketAddrs + fmt::Debug) -> Result<Self> {
         info!("Listening on {:?}", addr);
         Ok(Server {
-            listener: TcpListener::bind(addr)?,
+            listener: TcpListener::bind(addr).context("Listener binding")?,
         })
     }
 
@@ -37,14 +37,8 @@ fn handle(stream: TcpStream) {
 
             let mut worker = Worker::new(addr, stream);
             if let Err(err) = worker.run() {
-                for cause in err.iter_chain() {
-                    error!("{}", cause);
-                    if let Some(bt) = cause.backtrace() {
-                        if !bt.is_empty() {
-                            error!("{}", bt);
-                        }
-                    }
-                }
+                eprintln!("{}", err);
+                err.chain().skip(1).for_each(|cause| eprintln!("because: {}", cause));
             }
         }
         Err(err) => error!("Could not get peer address: {}", err),
