@@ -37,7 +37,14 @@ fn handle(stream: TcpStream) {
 
             let mut worker = Worker::new(addr, stream);
             if let Err(err) = worker.run() {
-                error!("{} {}", worker, err);
+                for cause in err.iter_chain() {
+                    error!("{}", cause);
+                    if let Some(bt) = cause.backtrace() {
+                        if !bt.is_empty() {
+                            error!("{}", bt);
+                        }
+                    }
+                }
             }
         }
         Err(err) => error!("Could not get peer address: {}", err),

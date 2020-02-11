@@ -18,7 +18,7 @@ pub fn init(verbose: u64) {
 
         writeln!(
             buf,
-            "{level:5} {time} {file}:{line} {args}",
+            "{level:5} {time} {file:>10}:{line:<4} {args}",
             level = level_style.value(record.level()),
             time = chrono::Utc::now().to_rfc3339(),
             file = &record.file().unwrap_or("____unknown")[4..],

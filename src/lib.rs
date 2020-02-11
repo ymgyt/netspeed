@@ -7,4 +7,6 @@ pub mod server;
 pub use client::Client;
 pub use server::Server;
 
-pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
+use failure::Error;
+
+pub type Result<T> = std::result::Result<T, Error>;

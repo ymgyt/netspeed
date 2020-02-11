@@ -1,8 +1,7 @@
 use crate::{command::Command, Result};
-use byteorder::{ReadBytesExt, WriteBytesExt};
+use failure::ResultExt;
 use log::{debug, info};
 use std::{
-    convert::TryFrom,
     fmt,
     net::{TcpStream, ToSocketAddrs},
     time::Duration,
@@ -20,7 +19,8 @@ impl Client {
             conn: TcpStream::connect_timeout(
                 &addr.to_socket_addrs().unwrap().next().unwrap(),
                 Duration::from_secs(3),
-            )?,
+            )
+            .context(format!("Addr:{:?}", addr))?,
         })
     }
 
@@ -29,15 +29,7 @@ impl Client {
     }
 
     fn ping_pon(&mut self) -> Result<()> {
-        debug!("Send ping");
-        self.conn.write_u8(Command::Ping.into())?;
-        let cmd = self.conn.read_u8()?;
-        let cmd = Command::try_from(cmd)?;
-        match cmd {
-            Command::Ping => {
-                debug!("Receive ping");
-                Ok(())
-            }
-        }
+        Command::ping_pon(&mut self.conn)
+            .map(|r| { debug!("Successfully ping to remote server"); r })
     }
 }
