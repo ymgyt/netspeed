@@ -1,11 +1,12 @@
+use crate::command::Command;
+use anyhow::{Context, Result, anyhow};
+use log::{debug, info};
+use std::io::Read;
 use std::{
     fmt,
     net::{TcpStream, ToSocketAddrs},
     time::Duration,
 };
-use log::{debug, info};
-use anyhow::{Result, Context};
-use crate::command::Command;
 
 pub struct Client {
     conn: TcpStream,
@@ -26,10 +27,34 @@ impl Client {
 
     pub fn run(mut self) -> Result<()> {
         self.ping_pon()
+            .and(self.downstream(Duration::from_secs(2)))
     }
 
     fn ping_pon(&mut self) -> Result<()> {
-        Command::ping_pon(&mut self.conn)
-            .map(|r| { debug!("Successfully ping to remote server"); r })
+        Command::ping_write_then_read(&mut self.conn).map(|r| {
+            debug!("Successfully ping to remote server");
+            r
+        })
+    }
+
+    fn downstream(&mut self, duration: Duration) -> Result<()> {
+        debug!("Request downstream");
+        Command::request_downstream(self.conn.by_ref(), duration)?;
+
+        let mut buff = [0u8; crate::BUFFER_SIZE];
+        let  mut read_bytes = 0u64;
+        loop {
+            match Command::read(self.conn.by_ref())? {
+                Command::SendBuffer => {
+                    Command::receive_buffer(self.conn.by_ref(), &mut buff)?;
+                    read_bytes = read_bytes.saturating_add(crate::BUFFER_SIZE as u64);
+                }
+                Command::Complete => {
+                    info!("Success! {}MiB", read_bytes / 1024 / 1024);
+                    return Ok(());
+                }
+                _ => return Err(anyhow!("Unexpected command")),
+            }
+        }
     }
 }

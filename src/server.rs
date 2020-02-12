@@ -1,13 +1,15 @@
-use std::{
-    convert::TryFrom,
-    fmt,
-    net::{SocketAddr, TcpListener, TcpStream, ToSocketAddrs},
-    thread,
-};
-use log::{debug, error, info};
-use byteorder::{ReadBytesExt, WriteBytesExt};
-use anyhow::{Context, Result};
 use crate::command::Command;
+use anyhow::{anyhow, Context, Result};
+#[allow(unused_imports)]
+use byteorder::{ReadBytesExt, WriteBytesExt};
+#[allow(unused_imports)]
+use log::{debug, error, info};
+use std::{
+    fmt,
+    io::{self, Read},
+    net::{SocketAddr, TcpListener, TcpStream, ToSocketAddrs},
+    thread, time,
+};
 
 pub struct Server {
     listener: TcpListener,
@@ -33,10 +35,8 @@ impl Server {
 fn handle(stream: TcpStream) {
     match stream.peer_addr() {
         Ok(addr) => {
-            info!("Incoming connection from {}", addr);
-
-            let mut worker = Worker::new(addr, stream);
-            if let Err(err) = worker.run() {
+            info!("Handle incoming connection. dispatch worker {}", addr);
+            if let Err(err) = Worker::dispatch(addr, stream) {
                 eprintln!("{:#?}", err);
             }
         }
@@ -50,6 +50,9 @@ struct Worker {
 }
 
 impl Worker {
+    fn dispatch(addr: SocketAddr, stream: TcpStream) -> Result<()> {
+        Worker::new(addr, stream).run()
+    }
     fn new(addr: SocketAddr, stream: TcpStream) -> Self {
         Self {
             peer: format!("{}", addr),
@@ -57,19 +60,50 @@ impl Worker {
         }
     }
     fn run(&mut self) -> Result<()> {
-        self.ping_pon()
+        self.ping_pon()?;
+        info!("{} Successfully ping to client", self);
+        loop {
+            let cmd = Command::read(self.stream.by_ref())
+                .or_else(|err| {
+                    if let Some(io_err) = err.downcast_ref::<io::Error>() {
+                        if io_err.kind() == io::ErrorKind::UnexpectedEof {
+                            info!("{} Closed by remote", self);
+                            return Ok(Command::Close);
+                        }
+                    }
+                    Err(err)
+                })
+                .context("Read command")?;
+
+            match cmd {
+                Command::RequestDownstream => {
+                    info!("{} Handle downstream", self);
+                    self.handle_downstream()?;
+                    info!("{} Successfully handle downstream", self);
+                }
+                Command::Close => return Ok(()),
+                _ => return Err(anyhow!("Unexpected command {:?}", cmd)),
+            }
+        }
     }
 
     fn ping_pon(&mut self) -> Result<()> {
-        let cmd = self.stream.read_u8()?;
-        let cmd = Command::try_from(cmd)?;
-        match cmd {
-            Command::Ping => {
-                self.stream.write_u8(Command::Ping.into())?;
-                debug!("{} Successfully ping pon", self);
-                Ok(())
+        Command::ping_read_then_write(self.stream.by_ref())
+    }
+
+    fn handle_downstream(&mut self) -> Result<()> {
+        let timeout = Command::read_duration(self.stream.by_ref())?;
+        debug!("{} Timeout: {:?}", self, timeout);
+
+        let start = time::Instant::now();
+        let buff = [0u8; crate::BUFFER_SIZE];
+        loop {
+            Command::send_buffer(self.stream.by_ref(), &buff)?;
+            if start.elapsed() >= timeout {
+                break;
             }
         }
+        Command::write(self.stream.by_ref(), Command::Complete)
     }
 }
 

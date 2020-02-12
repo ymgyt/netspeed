@@ -18,7 +18,7 @@ fn run() -> Result<(), anyhow::Error> {
 
 fn main() {
     if let Err(err) = run() {
-            error!("{:?}", err);
+        error!("{:?}", err);
         std::process::exit(1)
     }
 }
