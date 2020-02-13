@@ -1,6 +1,6 @@
 use crate::{
     command::{Command, Operator},
-    Result,
+    util, Result,
 };
 use anyhow::{anyhow, Context};
 #[allow(unused_imports)]
@@ -10,7 +10,7 @@ use log::{debug, error, info};
 use std::{
     fmt, io,
     net::{SocketAddr, TcpListener, TcpStream, ToSocketAddrs},
-    thread, time,
+    thread,
 };
 
 pub struct Server {
@@ -85,6 +85,11 @@ impl Worker {
                     self.handle_downstream()?;
                     info!("{} Successfully handle downstream", self);
                 }
+                Command::RequestUpstream => {
+                    info!("{} Handle upstream", self);
+                    self.handle_upstream()?;
+                    info!("{} Successfully handle upstream", self);
+                }
                 Command::Close => return Ok(()),
                 _ => return Err(anyhow!("Unexpected command {:?}", cmd)),
             }
@@ -98,16 +103,18 @@ impl Worker {
     fn handle_downstream(&mut self) -> Result<()> {
         let timeout = self.operator.read_duration()?;
         debug!("{} Timeout: {:?}", self, timeout);
+        let write_bytes = self.operator.write_loop(timeout)?;
+        debug!("{} Write {}", self, util::format_bytes(write_bytes));
+        Ok(())
+    }
 
-        let start = time::Instant::now();
-        let buff = [0u8; crate::BUFFER_SIZE];
-        loop {
-            self.operator.send_buffer(&buff)?;
-            if start.elapsed() >= timeout {
-                break;
-            }
-        }
-        self.operator.write(Command::Complete)
+    fn handle_upstream(&mut self) -> Result<()> {
+        // consume
+        let timeout = self.operator.read_duration()?;
+        debug!("{} Timeout: {:?}", self, timeout);
+        let read_bytes = self.operator.read_loop()?;
+        debug!("{} Read {}", self, util::format_bytes(read_bytes));
+        Ok(())
     }
 }
 

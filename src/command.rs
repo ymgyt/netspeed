@@ -5,7 +5,7 @@ use std::{
     convert::{From, TryFrom},
     io::{Read, Write},
     net::TcpStream,
-    time::Duration,
+    time::{self, Duration},
 };
 
 #[repr(u8)]
@@ -13,9 +13,10 @@ use std::{
 pub enum Command {
     Ping = 1,
     RequestDownstream = 2,
-    SendBuffer = 3,
-    Complete = 4,
-    Close = 10,
+    RequestUpstream = 3,
+    SendBuffer = 4,
+    Complete = 5,
+    Close = 100,
 }
 
 impl From<Command> for u8 {
@@ -23,9 +24,10 @@ impl From<Command> for u8 {
         match cmd {
             Command::Ping => 1,
             Command::RequestDownstream => 2,
-            Command::SendBuffer => 3,
-            Command::Complete => 4,
-            Command::Close => 10,
+            Command::RequestUpstream => 3,
+            Command::SendBuffer => 4,
+            Command::Complete => 5,
+            Command::Close => 100,
         }
     }
 }
@@ -36,9 +38,10 @@ impl TryFrom<u8> for Command {
         match n {
             1 => Ok(Command::Ping),
             2 => Ok(Command::RequestDownstream),
-            3 => Ok(Command::SendBuffer),
-            4 => Ok(Command::Complete),
-            10 => Ok(Command::Close),
+            3 => Ok(Command::RequestUpstream),
+            4 => Ok(Command::SendBuffer),
+            5 => Ok(Command::Complete),
+            100 => Ok(Command::Close),
             _ => Err(anyhow!("Invalid number {} for command", n)),
         }
     }
@@ -71,14 +74,49 @@ impl Operator {
     pub fn request_downstream(&mut self, duration: Duration) -> Result<()> {
         self.write(Command::RequestDownstream)
             .and(self.write_duration(duration))
+            .and(self.flush())
+    }
+
+    pub fn request_upstream(&mut self, duration: Duration) -> Result<()> {
+        self.write(Command::RequestUpstream)
+            .and(self.write_duration(duration))
+            .and(self.flush())
+    }
+
+    pub fn write_loop(&mut self, timeout: Duration) -> Result<u64> {
+        let start = time::Instant::now();
+        let mut write_bytes = 0u64;
+        let buff = [0u8; crate::BUFFER_SIZE];
+        loop {
+            if start.elapsed() >= timeout {
+                break;
+            }
+            self.send_buffer(&buff)?;
+            write_bytes = write_bytes.saturating_add(crate::BUFFER_SIZE as u64);
+        }
+        self.write(Command::Complete)?;
+        Ok(write_bytes)
+    }
+
+    pub fn read_loop(&mut self) -> Result<u64> {
+        let mut buff = [0u8; crate::BUFFER_SIZE];
+        let mut read_bytes = 0u64;
+        loop {
+            match self.read()? {
+                Command::SendBuffer => {
+                    self.receive_buffer(&mut buff)?;
+                    read_bytes = read_bytes.saturating_add(crate::BUFFER_SIZE as u64);
+                }
+                Command::Complete => return Ok(read_bytes),
+                _ => return Err(anyhow!("Unexpected command")),
+            }
+        }
     }
 
     pub fn send_buffer(&mut self, buff: &[u8]) -> Result<()> {
         self.write(Command::SendBuffer)?;
-        Write::by_ref(&mut self.conn)
-            .write_all(buff)
-            .and(Write::by_ref(&mut self.conn).flush())
-            .map_err(anyhow::Error::from)
+        Write::by_ref(&mut self.conn).write_all(buff)?;
+        self.flush()
     }
 
     pub fn receive_buffer(&mut self, buff: &mut [u8]) -> Result<()> {
@@ -121,5 +159,11 @@ impl Operator {
         } else {
             Ok(())
         }
+    }
+
+    fn flush(&mut self) -> Result<()> {
+        Write::by_ref(&mut self.conn)
+            .flush()
+            .map_err(anyhow::Error::from)
     }
 }

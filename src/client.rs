@@ -1,17 +1,29 @@
-use crate::{
-    command::{Command, Operator},
-    Result,
-};
-use anyhow::{anyhow, Context};
+use crate::{command::Operator, Result};
+use anyhow::Context;
 use log::{debug, info};
 use std::{
     fmt,
+    io::{self, Write},
     net::{TcpStream, ToSocketAddrs},
+    str::FromStr,
     time::Duration,
 };
 
+#[derive(Default, Debug)]
+struct Throughput {
+    bytes: u64,
+    duration: Duration,
+}
+
+#[derive(Default, Debug)]
+struct NetworkSpec {
+    downstream: Throughput,
+    upstream: Throughput,
+}
+
 pub struct Client {
     operator: Operator,
+    spec: NetworkSpec,
 }
 
 impl Client {
@@ -26,11 +38,23 @@ impl Client {
                 )
                 .context(format!("Addr:{:?}", addr))?,
             ),
+            spec: NetworkSpec::default(),
         })
     }
 
+    pub fn duration(mut self, duration: Option<&str>) -> Self {
+        let duration =
+            Duration::from_secs(u64::from_str(duration.unwrap_or("3").as_ref()).unwrap());
+        self.spec.downstream.duration = duration;
+        self.spec.upstream.duration = duration;
+        self
+    }
+
     pub fn run(mut self) -> Result<()> {
-        self.ping_pon().and(self.downstream(Duration::from_secs(2)))
+        self.ping_pon()
+            .and(self.downstream())
+            .and(self.upstream())
+            .and(self.print_result(io::stdout()))
     }
 
     fn ping_pon(&mut self) -> Result<()> {
@@ -40,24 +64,44 @@ impl Client {
         })
     }
 
-    fn downstream(&mut self, duration: Duration) -> Result<()> {
-        debug!("Request downstream");
-        self.operator.request_downstream(duration)?;
+    fn downstream(&mut self) -> Result<()> {
+        debug!(
+            "Request downstream duration: {} seconds",
+            self.spec.downstream.duration.as_secs()
+        );
+        self.operator
+            .request_downstream(self.spec.downstream.duration)?;
+        self.spec.downstream.bytes = self.operator.read_loop()?;
+        Ok(())
+    }
 
-        let mut buff = [0u8; crate::BUFFER_SIZE];
-        let mut read_bytes = 0u64;
-        loop {
-            match self.operator.read()? {
-                Command::SendBuffer => {
-                    self.operator.receive_buffer(&mut buff)?;
-                    read_bytes = read_bytes.saturating_add(crate::BUFFER_SIZE as u64);
-                }
-                Command::Complete => {
-                    info!("Success! {}MiB", read_bytes / 1024 / 1024);
-                    return Ok(());
-                }
-                _ => return Err(anyhow!("Unexpected command")),
-            }
-        }
+    fn upstream(&mut self) -> Result<()> {
+        debug!(
+            "Request upstream duration: {} seconds",
+            self.spec.upstream.duration.as_secs()
+        );
+        self.operator
+            .request_upstream(self.spec.upstream.duration)?;
+        self.spec.upstream.bytes = self.operator.write_loop(self.spec.upstream.duration)?;
+        Ok(())
+    }
+
+    fn print_result<W: Write>(&mut self, mut writer: W) -> Result<()> {
+        writeln!(
+            writer,
+            "Downstream: {}",
+            self.format_throughput(&self.spec.downstream)
+        )
+        .and(writeln!(
+            writer,
+            "  Upstream: {}",
+            self.format_throughput(&self.spec.upstream)
+        ))
+        .map_err(anyhow::Error::from)
+    }
+
+    fn format_throughput(&self, throughput: &Throughput) -> String {
+        use crate::util::*;
+        format_bps(to_bps(throughput.bytes, throughput.duration))
     }
 }

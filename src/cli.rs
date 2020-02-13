@@ -30,6 +30,15 @@ impl ArgParser {
                     .default_value("localhost:5555")
                     .global(true),
             )
+            .arg(
+                Arg::with_name("duration")
+                    .long("duration")
+                    .alias("duration-seconds")
+                    .help("speed test duration seconds")
+                    .takes_value(true)
+                    .default_value("3")
+                    .value_name("SECONDS"),
+            )
             .subcommand(
                 App::new("server")
                     .setting(AppSettings::ColorAuto)

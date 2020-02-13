@@ -11,7 +11,8 @@ fn run() -> Result<(), anyhow::Error> {
         let server = Server::new(sub.value_of("address").unwrap())?;
         server.run()
     } else {
-        let client = Client::new(args.value_of("address").unwrap())?;
+        let client =
+            Client::new(args.value_of("address").unwrap())?.duration(args.value_of("duration"));
         client.run()
     }
 }
