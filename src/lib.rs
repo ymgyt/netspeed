@@ -7,4 +7,6 @@ pub mod server;
 pub use client::Client;
 pub use server::Server;
 
+pub type Result<T> = std::result::Result<T, anyhow::Error>;
+
 pub const BUFFER_SIZE: usize = 1024 * 1024;

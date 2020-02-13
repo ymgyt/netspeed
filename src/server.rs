@@ -1,12 +1,14 @@
-use crate::command::Command;
-use anyhow::{anyhow, Context, Result};
+use crate::{
+    command::{Command, Operator},
+    Result,
+};
+use anyhow::{anyhow, Context};
 #[allow(unused_imports)]
 use byteorder::{ReadBytesExt, WriteBytesExt};
 #[allow(unused_imports)]
 use log::{debug, error, info};
 use std::{
-    fmt,
-    io::{self, Read},
+    fmt, io,
     net::{SocketAddr, TcpListener, TcpStream, ToSocketAddrs},
     thread, time,
 };
@@ -46,7 +48,7 @@ fn handle(stream: TcpStream) {
 
 struct Worker {
     peer: String,
-    stream: TcpStream,
+    operator: Operator,
 }
 
 impl Worker {
@@ -56,14 +58,16 @@ impl Worker {
     fn new(addr: SocketAddr, stream: TcpStream) -> Self {
         Self {
             peer: format!("{}", addr),
-            stream,
+            operator: Operator::new(stream),
         }
     }
     fn run(&mut self) -> Result<()> {
         self.ping_pon()?;
         info!("{} Successfully ping to client", self);
         loop {
-            let cmd = Command::read(self.stream.by_ref())
+            let cmd = self
+                .operator
+                .read()
                 .or_else(|err| {
                     if let Some(io_err) = err.downcast_ref::<io::Error>() {
                         if io_err.kind() == io::ErrorKind::UnexpectedEof {
@@ -88,22 +92,22 @@ impl Worker {
     }
 
     fn ping_pon(&mut self) -> Result<()> {
-        Command::ping_read_then_write(self.stream.by_ref())
+        self.operator.ping_read_then_write()
     }
 
     fn handle_downstream(&mut self) -> Result<()> {
-        let timeout = Command::read_duration(self.stream.by_ref())?;
+        let timeout = self.operator.read_duration()?;
         debug!("{} Timeout: {:?}", self, timeout);
 
         let start = time::Instant::now();
         let buff = [0u8; crate::BUFFER_SIZE];
         loop {
-            Command::send_buffer(self.stream.by_ref(), &buff)?;
+            self.operator.send_buffer(&buff)?;
             if start.elapsed() >= timeout {
                 break;
             }
         }
-        Command::write(self.stream.by_ref(), Command::Complete)
+        self.operator.write(Command::Complete)
     }
 }
 
