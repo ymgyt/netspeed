@@ -1,3 +1,4 @@
+use crate::command::DeclineReason;
 use crate::{
     command::{Command, Operator},
     util, Result,
@@ -6,43 +7,97 @@ use anyhow::{anyhow, Context};
 #[allow(unused_imports)]
 use byteorder::{ReadBytesExt, WriteBytesExt};
 #[allow(unused_imports)]
-use log::{debug, error, info};
+use log::{debug, error, info, warn};
 use std::{
     fmt, io,
     net::{SocketAddr, TcpListener, TcpStream, ToSocketAddrs},
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    },
     thread,
 };
 
+pub const DEFAULT_MAX_THREADS: usize = 100;
+
 pub struct Server {
     listener: TcpListener,
+    dispatcher: Arc<Dispatcher>,
 }
 
 impl Server {
-    pub fn new(addr: impl ToSocketAddrs + fmt::Debug) -> Result<Self> {
-        info!("Listening on {:?}", addr);
+    pub fn new(addr: impl ToSocketAddrs + fmt::Debug, max_threads: usize) -> Result<Self> {
+        info!("Listening on {:?} max threads: {}", addr, max_threads);
         Ok(Server {
             listener: TcpListener::bind(addr).context("Listener binding")?,
+            dispatcher: Arc::new(Dispatcher::new(max_threads)),
         })
     }
 
     pub fn run(self) -> Result<()> {
         for stream in self.listener.incoming() {
-            let stream = stream?;
-            thread::spawn(move || handle(stream));
+            self.dispatcher.dispatch(stream?)
         }
         Ok(())
     }
 }
 
-fn handle(stream: TcpStream) {
-    match stream.peer_addr() {
-        Ok(addr) => {
-            info!("Handle incoming connection. dispatch worker {}", addr);
-            if let Err(err) = Worker::dispatch(addr, stream) {
-                eprintln!("{:#?}", err);
-            }
+struct Dispatcher {
+    max_workers: usize,
+    active_workers: AtomicUsize,
+}
+
+impl Dispatcher {
+    fn new(max_threads: usize) -> Self {
+        Self {
+            active_workers: AtomicUsize::new(0),
+            max_workers: max_threads,
         }
-        Err(err) => error!("Could not get peer address: {}", err),
+    }
+
+    fn dispatch(self: &Arc<Self>, stream: TcpStream) {
+        let current_workers = self.active_workers.load(Ordering::Relaxed);
+        if current_workers >= self.max_workers {
+            warn!(
+                "Max Threads/Workers counts exceeded. ({}/{})",
+                current_workers, self.max_workers
+            );
+            self.decline(stream);
+        } else {
+            info!(
+                "Pass concurrent threads check. ({}/{})",
+                current_workers, self.max_workers
+            );
+            self.active_workers.fetch_add(1, Ordering::Relaxed);
+            self.dispatch_worker(stream)
+        }
+    }
+
+    fn decline(self: &Arc<Self>, stream: TcpStream) {
+        let mut operator = Operator::new(stream);
+        if let Err(err) =
+            operator.write_decline(DeclineReason::MaxThreadsExceed(self.max_workers), false)
+        {
+            error!("{:#?}", err);
+        }
+    }
+
+    fn dispatch_worker(self: &Arc<Self>, stream: TcpStream) {
+        let dispatcher: Arc<Dispatcher> = Arc::clone(self);
+        thread::spawn(move || match stream.peer_addr() {
+            Ok(addr) => {
+                info!(
+                    "Handle incoming connection. dispatch worker {} actives: {}",
+                    addr,
+                    dispatcher.active_workers.load(Ordering::SeqCst)
+                );
+                if let Err(err) = Worker::dispatch(addr, stream) {
+                    eprintln!("{:#?}", err);
+                }
+                dispatcher.active_workers.fetch_sub(1, Ordering::Relaxed);
+            }
+            Err(err) => error!("Could not get peer address: {}", err),
+        });
     }
 }
 
@@ -62,8 +117,8 @@ impl Worker {
         }
     }
     fn run(&mut self) -> Result<()> {
-        self.ping_pon()?;
-        info!("{} Successfully ping to client", self);
+        self.ready().and_then(|_| self.ping_pon())?;
+        debug!("{} Successfully ping to client", self);
         loop {
             let cmd = self
                 .operator
@@ -94,6 +149,10 @@ impl Worker {
                 _ => return Err(anyhow!("Unexpected command {:?}", cmd)),
             }
         }
+    }
+
+    fn ready(&mut self) -> Result<()> {
+        self.operator.write(Command::Ready)
     }
 
     fn ping_pon(&mut self) -> Result<()> {

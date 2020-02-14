@@ -1,5 +1,5 @@
 use log::error;
-use netspeed::{cli, logger, Client, Server};
+use netspeed::{cli, logger, Client, Server, DEFAULT_MAX_THREADS};
 use std::env;
 
 fn run() -> Result<(), anyhow::Error> {
@@ -8,7 +8,13 @@ fn run() -> Result<(), anyhow::Error> {
     logger::init(args.occurrences_of("verbose"));
 
     if let Some(sub) = args.subcommand_matches("server") {
-        let server = Server::new(sub.value_of("address").unwrap())?;
+        let server = Server::new(
+            sub.value_of("address").unwrap(),
+            sub.value_of("max-threads")
+                .unwrap()
+                .parse()
+                .unwrap_or(DEFAULT_MAX_THREADS),
+        )?;
         server.run()
     } else {
         let client =

@@ -6,7 +6,7 @@ pub mod server;
 pub mod util;
 
 pub use client::Client;
-pub use server::Server;
+pub use server::{Server, DEFAULT_MAX_THREADS};
 
 pub type Result<T> = std::result::Result<T, anyhow::Error>;
 

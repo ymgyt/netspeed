@@ -48,6 +48,15 @@ impl ArgParser {
                             .index(1)
                             .required(true)
                             .help("running server"),
+                    )
+                    .arg(
+                        Arg::with_name("max-threads")
+                            .long("max-threads")
+                            .alias("max-workers")
+                            .help("max concurrent threads/workers")
+                            .takes_value(true)
+                            .default_value("100")
+                            .value_name("NUMBER"),
                     ),
             )
             .get_matches_from(args)

@@ -1,5 +1,8 @@
-use crate::{command::Operator, Result};
-use anyhow::Context;
+use crate::{
+    command::{Command, DeclineReason, Operator},
+    Result,
+};
+use anyhow::{anyhow, Context};
 use log::{debug, info};
 use std::{
     fmt,
@@ -51,10 +54,29 @@ impl Client {
     }
 
     pub fn run(mut self) -> Result<()> {
-        self.ping_pon()
-            .and(self.downstream())
-            .and(self.upstream())
-            .and(self.print_result(io::stdout()))
+        self.check_server_status()
+            .and_then(|_| self.ping_pon())
+            .and_then(|_| self.downstream())
+            .and_then(|_| self.upstream())
+            .and_then(|_| self.print_result(io::stdout()))
+    }
+
+    fn check_server_status(&mut self) -> Result<()> {
+        let cmd = self.operator.read()?;
+        match cmd {
+            Command::Ready => {
+                debug!("Receive server ready");
+                Ok(())
+            }
+            Command::Decline => match self.operator.read_decline_reason()? {
+                DeclineReason::Unknown => Err(anyhow!("Server decline speed test :(")),
+                DeclineReason::MaxThreadsExceed(max_threads) => Err(anyhow!(
+                    "Server decline speed test. Cause: max threads exceeded({})",
+                    max_threads
+                )),
+            },
+            _ => Err(anyhow!("Unexpected command {:?}", cmd)),
+        }
     }
 
     fn ping_pon(&mut self) -> Result<()> {

@@ -4,9 +4,14 @@ use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use std::{
     convert::{From, TryFrom},
     io::{Read, Write},
-    net::TcpStream,
+    net::{Shutdown, TcpStream},
     time::{self, Duration},
 };
+
+pub enum DeclineReason {
+    Unknown,
+    MaxThreadsExceed(usize),
+}
 
 #[repr(u8)]
 #[derive(Debug, Eq, PartialEq)]
@@ -16,6 +21,8 @@ pub enum Command {
     RequestUpstream = 3,
     SendBuffer = 4,
     Complete = 5,
+    Ready = 6,
+    Decline = 7,
     Close = 100,
 }
 
@@ -27,6 +34,8 @@ impl From<Command> for u8 {
             Command::RequestUpstream => 3,
             Command::SendBuffer => 4,
             Command::Complete => 5,
+            Command::Ready => 6,
+            Command::Decline => 7,
             Command::Close => 100,
         }
     }
@@ -41,6 +50,8 @@ impl TryFrom<u8> for Command {
             3 => Ok(Command::RequestUpstream),
             4 => Ok(Command::SendBuffer),
             5 => Ok(Command::Complete),
+            6 => Ok(Command::Ready),
+            7 => Ok(Command::Decline),
             100 => Ok(Command::Close),
             _ => Err(anyhow!("Invalid number {} for command", n)),
         }
@@ -73,14 +84,14 @@ impl Operator {
 
     pub fn request_downstream(&mut self, duration: Duration) -> Result<()> {
         self.write(Command::RequestDownstream)
-            .and(self.write_duration(duration))
-            .and(self.flush())
+            .and_then(|_| self.write_duration(duration))
+            .and_then(|_| self.flush())
     }
 
     pub fn request_upstream(&mut self, duration: Duration) -> Result<()> {
         self.write(Command::RequestUpstream)
-            .and(self.write_duration(duration))
-            .and(self.flush())
+            .and_then(|_| self.write_duration(duration))
+            .and_then(|_| self.flush())
     }
 
     pub fn write_loop(&mut self, timeout: Duration) -> Result<u64> {
@@ -158,6 +169,49 @@ impl Operator {
             ))
         } else {
             Ok(())
+        }
+    }
+
+    pub fn write_decline(&mut self, reason: DeclineReason, shutdown: bool) -> Result<()> {
+        self.write(Command::Decline)
+            .and(self.write_decline_reason(reason))
+            .and(self.flush())?;
+
+        if shutdown {
+            self.conn
+                .shutdown(Shutdown::Both)
+                .map_err(anyhow::Error::from)
+        } else {
+            Ok(())
+        }
+    }
+
+    fn write_decline_reason(&mut self, reason: DeclineReason) -> Result<()> {
+        let v = match reason {
+            DeclineReason::MaxThreadsExceed(max_threads) => {
+                // reason:32bit | description: 32bit
+                let mut v: u64 = 1;
+                v <<= 32;
+                v += max_threads as u64;
+                v
+            }
+            DeclineReason::Unknown => 0,
+        };
+        Write::by_ref(&mut self.conn)
+            .write_u64::<BigEndian>(v)
+            .map_err(anyhow::Error::from)
+    }
+
+    pub fn read_decline_reason(&mut self) -> Result<DeclineReason> {
+        let v = Read::by_ref(&mut self.conn)
+            .read_u64::<BigEndian>()
+            .map_err(anyhow::Error::from)?;
+        let reason = v >> 32;
+        let detail = v & (std::u32::MAX as u64);
+        if reason == 1 {
+            Ok(DeclineReason::MaxThreadsExceed(detail as usize))
+        } else {
+            Ok(DeclineReason::Unknown)
         }
     }
 
