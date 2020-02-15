@@ -5,7 +5,7 @@ use std::env;
 fn run() -> Result<(), anyhow::Error> {
     let args = cli::ArgParser::parse(env::args_os());
 
-    logger::init(args.occurrences_of("verbose"));
+    logger::init(args.occurrences_of("verbose"), args.is_present("server"));
 
     if let Some(sub) = args.subcommand_matches("server") {
         let server = Server::new(
