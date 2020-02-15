@@ -17,15 +17,25 @@ pub fn init(verbose: u64, is_server: bool) {
         level_style.set_color(level_color);
 
         if is_server {
-            writeln!(
-                buf,
-                "{level:5} {time} {file:>10}:{line:<4} {args}",
-                level = level_style.value(record.level()),
-                time = chrono::Utc::now().to_rfc3339(),
-                file = &record.file().unwrap_or("____unknown")[4..],
-                line = record.line().unwrap_or(0),
-                args = record.args(),
-            )
+            if cfg!(debug_assertions) {
+                writeln!(
+                    buf,
+                    "{level:5} {time} {file:>10}:{line:<4} {args}",
+                    level = level_style.value(record.level()),
+                    time = chrono::Utc::now().to_rfc3339(),
+                    file = &record.file().unwrap_or("____unknown")[4..],
+                    line = record.line().unwrap_or(0),
+                    args = record.args(),
+                )
+            } else {
+                writeln!(
+                    buf,
+                    "{level:5} {time} {args}",
+                    level = level_style.value(record.level()),
+                    time = chrono::Utc::now().to_rfc3339(),
+                    args = record.args(),
+                )
+            }
         } else {
             writeln!(
                 buf,
