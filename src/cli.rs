@@ -63,7 +63,7 @@ impl ArgParser {
                             .short("a")
                             .help("Listening address")
                             .takes_value(true)
-                            .default_value("localhost:5555"),
+                            .default_value("0.0.0.0:5555"),
                     )
                     .arg(
                         Arg::with_name("max-threads")
