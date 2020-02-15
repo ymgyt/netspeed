@@ -10,7 +10,7 @@ use std::{
 
 pub enum DeclineReason {
     Unknown,
-    MaxThreadsExceed(usize),
+    MaxThreadsExceed(u32),
 }
 
 #[repr(u8)]
@@ -209,7 +209,7 @@ impl Operator {
         let reason = v >> 32;
         let detail = v & (std::u32::MAX as u64);
         if reason == 1 {
-            Ok(DeclineReason::MaxThreadsExceed(detail as usize))
+            Ok(DeclineReason::MaxThreadsExceed(detail as u32))
         } else {
             Ok(DeclineReason::Unknown)
         }

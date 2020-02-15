@@ -18,7 +18,7 @@ use std::{
     thread,
 };
 
-pub const DEFAULT_MAX_THREADS: usize = 100;
+pub const DEFAULT_MAX_THREADS: u32 = 100;
 
 pub struct Server {
     listener: TcpListener,
@@ -26,7 +26,7 @@ pub struct Server {
 }
 
 impl Server {
-    pub fn new(addr: impl ToSocketAddrs + fmt::Debug, max_threads: usize) -> Result<Self> {
+    pub fn new(addr: impl ToSocketAddrs + fmt::Debug, max_threads: u32) -> Result<Self> {
         info!("Listening on {:?} max threads: {}", addr, max_threads);
         Ok(Server {
             listener: TcpListener::bind(addr).context("Listener binding")?,
@@ -43,12 +43,12 @@ impl Server {
 }
 
 struct Dispatcher {
-    max_workers: usize,
+    max_workers: u32,
     active_workers: AtomicUsize,
 }
 
 impl Dispatcher {
-    fn new(max_threads: usize) -> Self {
+    fn new(max_threads: u32) -> Self {
         Self {
             active_workers: AtomicUsize::new(0),
             max_workers: max_threads,
@@ -56,7 +56,7 @@ impl Dispatcher {
     }
 
     fn dispatch(self: &Arc<Self>, stream: TcpStream) {
-        let current_workers = self.active_workers.load(Ordering::Relaxed);
+        let current_workers = self.active_workers.load(Ordering::Relaxed) as u32;
         if current_workers >= self.max_workers {
             warn!(
                 "Max Threads/Workers counts exceeded. ({}/{})",
