@@ -1,6 +1,6 @@
 [package]
 name = "netspeed"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["ymgyt <yamaguchi7073xtt@gmail.com>"]
 license = "Apache-2.0 OR MIT"
 description = "measure tcp throughput"
