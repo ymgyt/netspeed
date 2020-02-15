@@ -1,0 +1,13 @@
+[tasks.format]
+command = "cargo"
+args = ["fmt"]
+
+[tasks.lint]
+command = "cargo"
+args = ["clippy"]
+
+[tasks.flow]
+dependencies = [
+  "format",
+  "lint"
+]

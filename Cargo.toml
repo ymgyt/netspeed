@@ -2,7 +2,12 @@
 name = "netspeed"
 version = "0.1.0"
 authors = ["ymgyt <yamaguchi7073xtt@gmail.com>"]
+license = "Apache-2.0 OR MIT"
+description = "measure tcp throughput"
 edition = "2018"
+repository = "https://github.com/ymgyt/netspeed"
+readme = "README.md"
+caregories = ["cli"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
