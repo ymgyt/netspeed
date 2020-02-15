@@ -87,8 +87,8 @@ impl Client {
     }
 
     fn downstream(&mut self) -> Result<()> {
-        debug!(
-            "Request downstream duration: {} seconds",
+        info!(
+            "Start downstream duration: {} seconds",
             self.spec.downstream.duration.as_secs()
         );
         self.operator
@@ -98,8 +98,8 @@ impl Client {
     }
 
     fn upstream(&mut self) -> Result<()> {
-        debug!(
-            "Request upstream duration: {} seconds",
+        info!(
+            "Start upstream duration: {} seconds",
             self.spec.upstream.duration.as_secs()
         );
         self.operator
